@@ -23,6 +23,50 @@ export default function Home() {
     setCarrinho([...carrinho, produto]);
   }
 
+  async function finalizarPedido() {
+  const itensAgrupados = carrinho.reduce(
+    (itens, produto) => {
+      const itemExistente = itens.find(
+        (item) => item.produto_id === produto.id
+      );
+
+      if (itemExistente) {
+        itemExistente.quantidade += 1;
+      } else {
+        itens.push({
+          produto_id: produto.id,
+          quantidade: 1,
+        });
+      }
+
+      return itens;
+    },
+    [] as { produto_id: number; quantidade: number }[]
+  );
+
+  const resposta = await fetch("http://127.0.0.1:8000/api/pedidos", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      itens: itensAgrupados,
+    }),
+  });
+
+  if (resposta.ok) {
+    const pedido = await resposta.json();
+
+    alert(
+      `Pedido #${pedido.id} criado com sucesso!\nStatus: ${pedido.status}\nTotal: R$ ${pedido.total
+        .toFixed(2)
+        .replace(".", ",")}`
+    );
+
+    setCarrinho([]);
+  }
+}
+
   const total = carrinho.reduce(
     (soma, produto) => soma + produto.preco,
     0
@@ -111,7 +155,10 @@ export default function Home() {
                 </span>
               </div>
 
-              <button className="mt-6 w-full cursor-pointer rounded-lg bg-green-600 py-3 font-semibold text-white hover:bg-green-700">
+              <button
+                onClick={finalizarPedido}
+                className="mt-6 w-full cursor-pointer rounded-lg bg-green-600 py-3 font-semibold text-white hover:bg-green-700"
+              >
                 Continuar pedido
               </button>
             </div>
