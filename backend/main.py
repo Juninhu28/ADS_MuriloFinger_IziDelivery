@@ -22,11 +22,34 @@ class ProdutoNovo(BaseModel):
     descricao: str | None = None
     preco: float = Field(gt=0)
 
+class ProdutoEdicao(BaseModel):
+    nome: str = Field(min_length=1, max_length=150)
+    descricao: str | None = None
+    preco: float = Field(gt=0)
+
+class ProdutoStatus(BaseModel):
+    ativo: bool
+
 class ItemPedidoNovo(BaseModel):
     produto_id: int
     quantidade: int = Field(gt=0)
 
+class ClienteNovo(BaseModel):
+    telefone: str = Field(min_length=10, max_length=20)
+    nome: str = Field(min_length=2, max_length=150)
+
+class EnderecoNovo(BaseModel):
+    cliente_id: int
+    logradouro: str = Field(min_length=2, max_length=150)
+    numero: str = Field(min_length=1, max_length=20)
+    complemento: str | None = None
+    bairro: str = Field(min_length=2, max_length=100)
+    cidade: str = Field(min_length=2, max_length=100)
+    referencia: str | None = None
+
 class PedidoNovo(BaseModel):
+    cliente_id: int
+    endereco_id: int
     itens: list[ItemPedidoNovo]
 
 class AtualizacaoStatusPedido(BaseModel):
@@ -60,6 +83,31 @@ def listar_produtos():
             CAST(preco AS DOUBLE) AS preco
         FROM produto
         WHERE ativo = TRUE
+        ORDER BY nome
+        """
+    )
+
+    produtos = cursor.fetchall()
+
+    cursor.close()
+    conexao.close()
+
+    return produtos
+
+@app.get("/api/estabelecimento/produtos")
+def listar_produtos_estabelecimento():
+    conexao = conectar_banco()
+    cursor = conexao.cursor(dictionary=True)
+
+    cursor.execute(
+        """
+        SELECT
+            id,
+            nome,
+            descricao,
+            CAST(preco AS DOUBLE) AS preco,
+            ativo
+        FROM produto
         ORDER BY nome
         """
     )
@@ -117,6 +165,34 @@ def criar_pedido(pedido: PedidoNovo):
         itens_processados = []
         total = 0
 
+        cursor.execute(
+            """
+            SELECT
+                id,
+                logradouro,
+                numero,
+                complemento,
+                bairro,
+                cidade,
+                referencia
+            FROM endereco_cliente
+            WHERE id = %s
+              AND cliente_id = %s
+            """,
+            (
+                pedido.endereco_id,
+                pedido.cliente_id,
+            ),
+        )
+
+        endereco = cursor.fetchone()
+
+        if endereco is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Endereço não encontrado para este cliente",
+            )
+
         for item in pedido.itens:
             cursor.execute(
                 """
@@ -130,7 +206,10 @@ def criar_pedido(pedido: PedidoNovo):
             produto = cursor.fetchone()
 
             if produto is None:
-                raise ValueError("Produto não encontrado")
+                raise HTTPException(
+                    status_code=404,
+                    detail="Produto não encontrado",
+                )
 
             subtotal = produto["preco"] * item.quantidade
             total += subtotal
@@ -149,15 +228,27 @@ def criar_pedido(pedido: PedidoNovo):
                 estabelecimento_id,
                 cliente_id,
                 status,
-                total
+                total,
+                endereco_logradouro,
+                endereco_numero,
+                endereco_complemento,
+                endereco_bairro,
+                endereco_cidade,
+                endereco_referencia
             )
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 1,
-                1,
+                pedido.cliente_id,
                 "Aguardando Confirmação",
                 total,
+                endereco["logradouro"],
+                endereco["numero"],
+                endereco["complemento"],
+                endereco["bairro"],
+                endereco["cidade"],
+                endereco["referencia"],
             ),
         )
 
@@ -353,4 +444,244 @@ def listar_itens_pedido(pedido_id: int):
     cursor.close()
     conexao.close()
 
-    return itens               
+    return itens
+
+@app.put("/api/produtos/{produto_id}")
+def editar_produto(produto_id: int, produto: ProdutoEdicao):
+    conexao = conectar_banco()
+    cursor = conexao.cursor()
+
+    cursor.execute(
+        """
+        UPDATE produto
+        SET nome = %s,
+            descricao = %s,
+            preco = %s
+        WHERE id = %s
+        """,
+        (
+            produto.nome,
+            produto.descricao,
+            produto.preco,
+            produto_id,
+        ),
+    )
+
+    if cursor.rowcount == 0:
+        cursor.close()
+        conexao.close()
+
+        raise HTTPException(
+            status_code=404,
+            detail="Produto não encontrado",
+        )
+
+    conexao.commit()
+
+    cursor.close()
+    conexao.close()
+
+    return {
+        "id": produto_id,
+        "nome": produto.nome,
+        "descricao": produto.descricao,
+        "preco": produto.preco,
+    }
+
+@app.patch("/api/produtos/{produto_id}/status")
+def alterar_status_produto(
+    produto_id: int,
+    dados: ProdutoStatus,
+):
+    conexao = conectar_banco()
+    cursor = conexao.cursor()
+
+    cursor.execute(
+        """
+        UPDATE produto
+        SET ativo = %s
+        WHERE id = %s
+        """,
+        (
+            dados.ativo,
+            produto_id,
+        ),
+    )
+
+    if cursor.rowcount == 0:
+        cursor.close()
+        conexao.close()
+
+        raise HTTPException(
+            status_code=404,
+            detail="Produto não encontrado",
+        )
+
+    conexao.commit()
+
+    cursor.close()
+    conexao.close()
+
+    return {
+        "id": produto_id,
+        "ativo": dados.ativo,
+    }
+
+@app.get("/api/clientes/telefone/{telefone}")
+def buscar_cliente_por_telefone(telefone: str):
+    conexao = conectar_banco()
+    cursor = conexao.cursor(dictionary=True)
+
+    cursor.execute(
+        """
+        SELECT
+            id,
+            telefone,
+            nome
+        FROM cliente
+        WHERE telefone = %s
+        """,
+        (telefone,),
+    )
+
+    cliente = cursor.fetchone()
+
+    cursor.close()
+    conexao.close()
+
+    if cliente is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Cliente não encontrado",
+        )
+
+    return cliente
+
+@app.post("/api/clientes", status_code=201)
+def cadastrar_cliente(cliente: ClienteNovo):
+    conexao = conectar_banco()
+    cursor = conexao.cursor(dictionary=True)
+
+    cursor.execute(
+        """
+        SELECT id
+        FROM cliente
+        WHERE telefone = %s
+        """,
+        (cliente.telefone,),
+    )
+
+    cliente_existente = cursor.fetchone()
+
+    if cliente_existente:
+        cursor.close()
+        conexao.close()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Telefone já cadastrado",
+        )
+
+    cursor.execute(
+        """
+        INSERT INTO cliente (
+            telefone,
+            nome
+        )
+        VALUES (%s, %s)
+        """,
+        (
+            cliente.telefone,
+            cliente.nome,
+        ),
+    )
+
+    conexao.commit()
+
+    cliente_id = cursor.lastrowid
+
+    cursor.close()
+    conexao.close()
+
+    return {
+        "id": cliente_id,
+        "telefone": cliente.telefone,
+        "nome": cliente.nome,
+    }
+
+@app.post("/api/enderecos", status_code=201)
+def cadastrar_endereco(endereco: EnderecoNovo):
+    conexao = conectar_banco()
+    cursor = conexao.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO endereco_cliente (
+            cliente_id,
+            logradouro,
+            numero,
+            complemento,
+            bairro,
+            cidade,
+            referencia
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            endereco.cliente_id,
+            endereco.logradouro,
+            endereco.numero,
+            endereco.complemento,
+            endereco.bairro,
+            endereco.cidade,
+            endereco.referencia,
+        ),
+    )
+
+    conexao.commit()
+
+    endereco_id = cursor.lastrowid
+
+    cursor.close()
+    conexao.close()
+
+    return {
+        "id": endereco_id,
+        "cliente_id": endereco.cliente_id,
+        "logradouro": endereco.logradouro,
+        "numero": endereco.numero,
+        "complemento": endereco.complemento,
+        "bairro": endereco.bairro,
+        "cidade": endereco.cidade,
+        "referencia": endereco.referencia,
+    }
+
+@app.get("/api/clientes/{cliente_id}/enderecos")
+def listar_enderecos_cliente(cliente_id: int):
+    conexao = conectar_banco()
+    cursor = conexao.cursor(dictionary=True)
+
+    cursor.execute(
+        """
+        SELECT
+            id,
+            cliente_id,
+            logradouro,
+            numero,
+            complemento,
+            bairro,
+            cidade,
+            referencia
+        FROM endereco_cliente
+        WHERE cliente_id = %s
+        ORDER BY id DESC
+        """,
+        (cliente_id,),
+    )
+
+    enderecos = cursor.fetchall()
+
+    cursor.close()
+    conexao.close()
+
+    return enderecos               

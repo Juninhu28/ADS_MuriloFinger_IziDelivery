@@ -7,6 +7,7 @@ type Produto = {
   nome: string;
   descricao: string | null;
   preco: number;
+  ativo: boolean;
 };
 
 export default function ProdutosEstabelecimento() {
@@ -14,22 +15,62 @@ export default function ProdutosEstabelecimento() {
   const [nome, setNome] = useState("");
   const [descricao, setDescricao] = useState("");
   const [preco, setPreco] = useState("");
+  const [produtoEditando, setProdutoEditando] = useState<number | null>(null);
 
   function carregarProdutos() {
-    fetch("http://127.0.0.1:8000/api/produtos")
+    fetch("http://127.0.0.1:8000/api/estabelecimento/produtos")
       .then((resposta) => resposta.json())
       .then((dados) => setProdutos(dados));
+  }
+
+  async function alterarStatusProduto(produtoId: number, ativo: boolean) {
+    const resposta = await fetch(
+      `http://127.0.0.1:8000/api/produtos/${produtoId}/status`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ativo,
+        }),
+      },
+    );
+
+    if (resposta.ok) {
+      carregarProdutos();
+    }
+  }
+
+  function iniciarEdicao(produto: Produto) {
+    setProdutoEditando(produto.id);
+    setNome(produto.nome);
+    setDescricao(produto.descricao ?? "");
+    setPreco(produto.preco.toString());
+  }
+
+  function cancelarEdicao() {
+    setProdutoEditando(null);
+    setNome("");
+    setDescricao("");
+    setPreco("");
   }
 
   useEffect(() => {
     carregarProdutos();
   }, []);
 
-  async function cadastrarProduto(evento: FormEvent<HTMLFormElement>) {
+  async function salvarProduto(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
 
-    const resposta = await fetch("http://127.0.0.1:8000/api/produtos", {
-      method: "POST",
+    const url = produtoEditando
+      ? `http://127.0.0.1:8000/api/produtos/${produtoEditando}`
+      : "http://127.0.0.1:8000/api/produtos";
+
+    const metodo = produtoEditando ? "PUT" : "POST";
+
+    const resposta = await fetch(url, {
+      method: metodo,
       headers: {
         "Content-Type": "application/json",
       },
@@ -45,15 +86,14 @@ export default function ProdutosEstabelecimento() {
       setDescricao("");
       setPreco("");
       carregarProdutos();
+      setProdutoEditando(null);
     }
   }
 
   return (
     <main className="min-h-screen bg-gray-100 p-8">
       <div className="mx-auto max-w-6xl">
-        <h1 className="mb-8 text-3xl font-bold text-gray-900">
-          Produtos
-        </h1>
+        <h1 className="mb-8 text-3xl font-bold text-gray-900">Produtos</h1>
 
         <div className="grid gap-8 lg:grid-cols-2">
           <section className="rounded-xl bg-white p-6 shadow-sm">
@@ -61,7 +101,7 @@ export default function ProdutosEstabelecimento() {
               Cadastrar produto
             </h2>
 
-            <form onSubmit={cadastrarProduto} className="space-y-4">
+            <form onSubmit={salvarProduto} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Nome
@@ -107,8 +147,18 @@ export default function ProdutosEstabelecimento() {
                 type="submit"
                 className="w-full cursor-pointer rounded-lg bg-red-600 py-3 font-semibold text-white hover:bg-red-700"
               >
-                Cadastrar produto
+                {produtoEditando ? "Salvar alterações" : "Cadastrar produto"}
               </button>
+
+              {produtoEditando && (
+                <button
+                  type="button"
+                  onClick={cancelarEdicao}
+                  className="w-full cursor-pointer rounded-lg bg-gray-500 py-3 font-semibold text-white hover:bg-gray-600"
+                >
+                  Cancelar edição
+                </button>
+              )}
             </form>
           </section>
 
@@ -119,10 +169,7 @@ export default function ProdutosEstabelecimento() {
 
             <div className="space-y-4">
               {produtos.map((produto) => (
-                <div
-                  key={produto.id}
-                  className="border-b border-gray-200 pb-4"
-                >
+                <div key={produto.id} className="border-b border-gray-200 pb-4">
                   <div className="flex justify-between gap-4">
                     <div>
                       <h3 className="font-semibold text-gray-900">
@@ -137,6 +184,37 @@ export default function ProdutosEstabelecimento() {
                     <span className="font-bold text-red-600">
                       R$ {produto.preco.toFixed(2).replace(".", ",")}
                     </span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-3">
+                    <span
+                      className={`rounded-full px-3 py-1 text-sm font-medium ${
+                        produto.ativo
+                          ? "bg-green-600 text-white"
+                          : "bg-gray-500 text-white"
+                      }`}
+                    >
+                      {produto.ativo ? "Ativo" : "Inativo"}
+                    </span>
+
+                    <button
+                      onClick={() => iniciarEdicao(produto)}
+                      className="cursor-pointer rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    >
+                      Editar
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        alterarStatusProduto(produto.id, !produto.ativo)
+                      }
+                      className={`cursor-pointer rounded-lg px-3 py-2 text-sm font-medium text-white ${
+                        produto.ativo
+                          ? "bg-red-600 hover:bg-red-700"
+                          : "bg-green-600 hover:bg-green-700"
+                      }`}
+                    >
+                      {produto.ativo ? "Desativar" : "Reativar"}
+                    </button>
                   </div>
                 </div>
               ))}
