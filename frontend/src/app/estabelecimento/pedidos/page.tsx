@@ -8,6 +8,12 @@ type Pedido = {
   status: string;
   total: number;
   criado_em: string;
+  endereco_logradouro: string | null;
+  endereco_numero: string | null;
+  endereco_complemento: string | null;
+  endereco_bairro: string | null;
+  endereco_cidade: string | null;
+  endereco_referencia: string | null;
 };
 
 type ItemPedido = {
@@ -28,6 +34,8 @@ export default function PedidosEstabelecimento() {
     Record<number, ItemPedido[]>
   >({});
   const [carregandoItens, setCarregandoItens] = useState<number | null>(null);
+  const [visao, setVisao] = useState<"andamento" | "historico">("andamento");
+  const [filtroStatus, setFiltroStatus] = useState("Todos");
 
   async function carregarPedidos() {
     try {
@@ -134,6 +142,24 @@ export default function PedidosEstabelecimento() {
     carregarPedidos();
   }, []);
 
+  const statusFinalizados = ["Concluído", "Recusado", "Cancelado"];
+
+  const pedidosDaVisao = pedidos.filter((pedido) => {
+    if (visao === "historico") {
+      return statusFinalizados.includes(pedido.status);
+    }
+
+    return !statusFinalizados.includes(pedido.status);
+  });
+
+  const pedidosFiltrados = pedidosDaVisao.filter((pedido) => {
+    if (filtroStatus === "Todos") {
+      return true;
+    }
+
+    return pedido.status === filtroStatus;
+  });
+
   return (
     <main className="min-h-screen bg-gray-100 p-8">
       <div className="mx-auto max-w-6xl">
@@ -142,6 +168,68 @@ export default function PedidosEstabelecimento() {
             <h1 className="text-3xl font-bold text-gray-900">
               Pedidos recebidos
             </h1>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button
+                onClick={() => {
+                  setVisao("andamento");
+                  setFiltroStatus("Todos");
+                }}
+                className={`rounded-lg px-4 py-2 font-medium ${
+                  visao === "andamento"
+                    ? "bg-red-600 text-white"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                Em andamento
+              </button>
+
+              <button
+                onClick={() => {
+                  setVisao("historico");
+                  setFiltroStatus("Todos");
+                }}
+                className={`rounded-lg px-4 py-2 font-medium ${
+                  visao === "historico"
+                    ? "bg-red-600 text-white"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                Histórico
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <label className="text-sm font-medium text-gray-700">
+                Filtrar por status
+              </label>
+
+              <select
+                value={filtroStatus}
+                onChange={(evento) => setFiltroStatus(evento.target.value)}
+                className="ml-3 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900"
+              >
+                <option value="Todos">Todos</option>
+
+                {visao === "andamento" ? (
+                  <>
+                    <option value="Aguardando Confirmação">
+                      Aguardando Confirmação
+                    </option>
+                    <option value="Confirmado">Confirmado</option>
+                    <option value="Em Preparação">Em Preparação</option>
+                    <option value="Pronto">Pronto</option>
+                    <option value="Saiu para Entrega">Saiu para Entrega</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="Concluído">Concluído</option>
+                    <option value="Recusado">Recusado</option>
+                    <option value="Cancelado">Cancelado</option>
+                  </>
+                )}
+              </select>
+            </div>
 
             <p className="mt-1 text-gray-500">
               Acompanhe os pedidos realizados pelos clientes
@@ -167,11 +255,16 @@ export default function PedidosEstabelecimento() {
         )}
 
         <div className="space-y-4">
-          {pedidos.map((pedido) => (
+          {pedidosFiltrados.length === 0 && (
+            <div className="mt-6 rounded-lg bg-gray-100 p-6 text-center text-gray-500">
+              Nenhum pedido encontrado.
+            </div>
+          )}
+          {pedidosFiltrados.map((pedido) => (
             <div key={pedido.id} className="rounded-xl bg-white p-6 shadow-sm">
-              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-                <div>
-                  <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-xl font-bold text-gray-900">
                       Pedido #{pedido.id}
                     </h2>
@@ -183,46 +276,6 @@ export default function PedidosEstabelecimento() {
                     >
                       {pedido.status}
                     </span>
-                    
-                    {pedidoAberto === pedido.id && (
-                      <div className="mt-6 border-t border-gray-200 pt-5">
-                        <h3 className="mb-4 font-semibold text-gray-900">
-                          Itens do pedido
-                        </h3>
-
-                        {carregandoItens === pedido.id ? (
-                          <p className="text-gray-500">Carregando itens...</p>
-                        ) : (
-                          <div className="space-y-3">
-                            {itensPorPedido[pedido.id]?.map((item) => (
-                              <div
-                                key={item.id}
-                                className="flex items-center justify-between border-b border-gray-100 pb-3"
-                              >
-                                <div>
-                                  <p className="font-medium text-gray-900">
-                                    {item.quantidade}x {item.nome}
-                                  </p>
-
-                                  <p className="text-sm text-gray-500">
-                                    R${" "}
-                                    {item.preco_unitario
-                                      .toFixed(2)
-                                      .replace(".", ",")}{" "}
-                                    cada
-                                  </p>
-                                </div>
-
-                                <span className="font-semibold text-gray-900">
-                                  R${" "}
-                                  {item.subtotal.toFixed(2).replace(".", ",")}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   <p className="mt-3 text-gray-700">
@@ -234,56 +287,115 @@ export default function PedidosEstabelecimento() {
                     {new Date(pedido.criado_em).toLocaleString("pt-BR")}
                   </p>
 
-                  <div className="mt-4">
-                    <label className="mb-1 block text-sm font-medium text-gray-700">
-                      Alterar status
-                    </label>
+                  {pedido.endereco_logradouro && (
+                    <div className="mt-4 text-sm text-gray-600">
+                      <p className="font-medium text-gray-800">
+                        Endereço de entrega
+                      </p>
 
-                    <select
-                      value={pedido.status}
-                      onChange={(evento) =>
-                        atualizarStatus(pedido.id, evento.target.value)
-                      }
-                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900"
+                      <p>
+                        {pedido.endereco_logradouro}, {pedido.endereco_numero}
+                        {pedido.endereco_complemento &&
+                          ` - ${pedido.endereco_complemento}`}
+                      </p>
+
+                      <p>
+                        {pedido.endereco_bairro} - {pedido.endereco_cidade}
+                      </p>
+
+                      {pedido.endereco_referencia && (
+                        <p>Referência: {pedido.endereco_referencia}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="w-full lg:w-72 lg:shrink-0">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Alterar status
+                  </label>
+
+                  <select
+                    value={pedido.status}
+                    onChange={(evento) =>
+                      atualizarStatus(pedido.id, evento.target.value)
+                    }
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900"
+                  >
+                    <option value="Aguardando Confirmação">
+                      Aguardando Confirmação
+                    </option>
+
+                    <option value="Confirmado">Confirmado</option>
+
+                    <option value="Em Preparação">Em Preparação</option>
+
+                    <option value="Pronto">Pronto</option>
+
+                    <option value="Saiu para Entrega">Saiu para Entrega</option>
+
+                    <option value="Concluído">Concluído</option>
+
+                    <option value="Recusado">Recusado</option>
+
+                    <option value="Cancelado">Cancelado</option>
+                  </select>
+
+                  <div className="mt-4 lg:text-right">
+                    <p className="text-sm text-gray-500">Total do pedido</p>
+
+                    <p className="mt-1 text-2xl font-bold text-red-600">
+                      R$ {pedido.total.toFixed(2).replace(".", ",")}
+                    </p>
+
+                    <button
+                      onClick={() => alternarItens(pedido.id)}
+                      className="mt-4 cursor-pointer rounded-lg border border-gray-300 px-4 py-2 font-medium text-gray-700 hover:bg-gray-100"
                     >
-                      <option value="Aguardando Confirmação">
-                        Aguardando Confirmação
-                      </option>
-
-                      <option value="Confirmado">Confirmado</option>
-
-                      <option value="Em Preparação">Em Preparação</option>
-
-                      <option value="Pronto">Pronto</option>
-
-                      <option value="Saiu para Entrega">
-                        Saiu para Entrega
-                      </option>
-
-                      <option value="Concluído">Concluído</option>
-
-                      <option value="Recusado">Recusado</option>
-
-                      <option value="Cancelado">Cancelado</option>
-                    </select>
+                      {pedidoAberto === pedido.id
+                        ? "Ocultar itens"
+                        : "Ver itens"}
+                    </button>
                   </div>
                 </div>
-
-                <div className="text-left md:text-right">
-                  <p className="text-sm text-gray-500">Total do pedido</p>
-
-                  <p className="mt-1 text-2xl font-bold text-red-600">
-                    R$ {pedido.total.toFixed(2).replace(".", ",")}
-                  </p>
-
-                  <button
-                    onClick={() => alternarItens(pedido.id)}
-                    className="mt-4 cursor-pointer rounded-lg border border-gray-300 px-4 py-2 font-medium text-gray-700 hover:bg-gray-100"
-                  >
-                    {pedidoAberto === pedido.id ? "Ocultar itens" : "Ver itens"}
-                  </button>
-                </div>
               </div>
+
+              {pedidoAberto === pedido.id && (
+                <div className="mt-6 border-t border-gray-200 pt-5">
+                  <h3 className="mb-4 font-semibold text-gray-900">
+                    Itens do pedido
+                  </h3>
+
+                  {carregandoItens === pedido.id ? (
+                    <p className="text-gray-500">Carregando itens...</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {itensPorPedido[pedido.id]?.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-start justify-between gap-6 border-b border-gray-100 pb-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="break-words font-medium text-gray-900">
+                              {item.quantidade}x {item.nome}
+                            </p>
+
+                            <p className="text-sm text-gray-500">
+                              R${" "}
+                              {item.preco_unitario.toFixed(2).replace(".", ",")}{" "}
+                              cada
+                            </p>
+                          </div>
+
+                          <span className="shrink-0 whitespace-nowrap font-semibold text-gray-900">
+                            R$ {item.subtotal.toFixed(2).replace(".", ",")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

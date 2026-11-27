@@ -1,4 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+from uuid import uuid4
+import shutil
 from fastapi.middleware.cors import CORSMiddleware
 from database import conectar_banco
 from pydantic import BaseModel, Field
@@ -17,15 +21,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = BASE_DIR / "uploads" / "produtos"
+
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory=BASE_DIR / "uploads"),
+    name="uploads",
+)
+
 class ProdutoNovo(BaseModel):
     nome: str = Field(min_length=1, max_length=150)
     descricao: str | None = None
     preco: float = Field(gt=0)
+    imagem_url: str | None = None
 
 class ProdutoEdicao(BaseModel):
     nome: str = Field(min_length=1, max_length=150)
     descricao: str | None = None
     preco: float = Field(gt=0)
+    imagem_url: str | None = None
 
 class ProdutoStatus(BaseModel):
     ativo: bool
@@ -80,6 +97,7 @@ def listar_produtos():
             id,
             nome,
             descricao,
+            imagem_url,
             CAST(preco AS DOUBLE) AS preco
         FROM produto
         WHERE ativo = TRUE
@@ -105,6 +123,7 @@ def listar_produtos_estabelecimento():
             id,
             nome,
             descricao,
+            imagem_url,
             CAST(preco AS DOUBLE) AS preco,
             ativo
         FROM produto
@@ -119,28 +138,59 @@ def listar_produtos_estabelecimento():
 
     return produtos
 
+@app.post("/api/produtos/upload-imagem", status_code=201)
+async def upload_imagem_produto(imagem: UploadFile = File(...)):
+    tipos_permitidos = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }
+
+    extensao = tipos_permitidos.get(imagem.content_type)
+
+    if not extensao:
+        raise HTTPException(
+            status_code=400,
+            detail="Formato de imagem não permitido",
+        )
+
+    nome_arquivo = f"{uuid4().hex}{extensao}"
+    caminho_arquivo = UPLOAD_DIR / nome_arquivo
+
+    try:
+        with caminho_arquivo.open("wb") as arquivo:
+            shutil.copyfileobj(imagem.file, arquivo)
+    finally:
+        await imagem.close()
+
+    return {
+        "imagem_url": f"/uploads/produtos/{nome_arquivo}"
+    }
+
 @app.post("/api/produtos", status_code=201)
 def cadastrar_produto(produto: ProdutoNovo):
     conexao = conectar_banco()
     cursor = conexao.cursor()
 
     cursor.execute(
-        """
-        INSERT INTO produto (
-            estabelecimento_id,
-            nome,
-            descricao,
-            preco
-        )
-        VALUES (%s, %s, %s, %s)
-        """,
-        (
-            1,
-            produto.nome,
-            produto.descricao,
-            produto.preco,
-        ),
+    """
+    INSERT INTO produto (
+        estabelecimento_id,
+        nome,
+        descricao,
+        preco,
+        imagem_url
     )
+    VALUES (%s, %s, %s, %s, %s)
+    """,
+    (
+        1,
+        produto.nome,
+        produto.descricao,
+        produto.preco,
+        produto.imagem_url,
+    ),
+)
 
     conexao.commit()
 
@@ -301,7 +351,13 @@ def listar_pedidos():
             cliente.nome AS cliente,
             pedido.status,
             CAST(pedido.total AS DOUBLE) AS total,
-            pedido.criado_em
+            pedido.criado_em,
+            pedido.endereco_logradouro,
+            pedido.endereco_numero,
+            pedido.endereco_complemento,
+            pedido.endereco_bairro,
+            pedido.endereco_cidade,
+            pedido.endereco_referencia
         FROM pedido
         INNER JOIN cliente
             ON pedido.cliente_id = cliente.id
@@ -456,13 +512,15 @@ def editar_produto(produto_id: int, produto: ProdutoEdicao):
         UPDATE produto
         SET nome = %s,
             descricao = %s,
-            preco = %s
+            preco = %s,
+            imagem_url = %s
         WHERE id = %s
         """,
         (
             produto.nome,
             produto.descricao,
             produto.preco,
+            produto.imagem_url,
             produto_id,
         ),
     )

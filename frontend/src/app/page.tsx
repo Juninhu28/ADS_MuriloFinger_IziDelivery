@@ -265,11 +265,13 @@ export default function Home() {
                 {carrinho.map((produto, indice) => (
                   <div
                     key={`${produto.id}-${indice}`}
-                    className="flex justify-between gap-3 border-b border-gray-200 pb-3"
+                    className="grid grid-cols-[minmax(0,1fr)_90px] gap-4 border-b border-gray-200 pb-3"
                   >
-                    <span className="text-gray-700">{produto.nome}</span>
+                    <span className="min-w-0 break-words text-gray-700">
+                      {produto.nome}
+                    </span>
 
-                    <span className="font-medium text-gray-900">
+                    <span className="whitespace-nowrap text-right font-medium text-gray-900">
                       R$ {produto.preco.toFixed(2).replace(".", ",")}
                     </span>
                   </div>
